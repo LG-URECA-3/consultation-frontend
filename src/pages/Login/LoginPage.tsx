@@ -29,6 +29,7 @@ interface BackendLoginResponse {
 
 /** 내 정보 조회 응답 인터페이스 */
 interface UserInfo {
+  userId?: number | string;
   id?: number | string; 
   name: string;
   email: string;
@@ -75,7 +76,7 @@ const LoginPage: React.FC = () => {
           const realUserId = userInfo?.userId || response.user?.id || response.data?.user?.id || response.data?.agentId || "1";
           localStorage.setItem("userId", String(realUserId));
 
-          console.log(`✅ [LoginPage] 유저 정보 연동 성공: ${realName} (ID: ${realUserId})`);
+          console.log(` [LoginPage] 유저 정보 연동 성공: ${realName} (ID: ${realUserId})`);
         } catch (userError) {
           console.error(" [LoginPage] 내 정보 조회 실패, 기본 정보 사용:", userError);
           const backupName = response.user?.name || response.data?.user?.name || "상담원";

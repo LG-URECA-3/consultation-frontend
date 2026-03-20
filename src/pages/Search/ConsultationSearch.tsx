@@ -1,30 +1,17 @@
 import {
-    ArrowLeft,
-    Calendar,
-    CheckCircle,
-    ChevronLeft,
-    ChevronRight,
-    ChevronsLeft,  
-    ChevronsRight,
-    Clock,
-    Download,
-    ExternalLink,
-    Filter,
-    MessageCircle,
-    RefreshCcw,
-    Search,
-    User,
-    UserCheck,
+    ArrowLeft, Calendar, CheckCircle, ChevronLeft, ChevronRight,
+    ChevronsLeft, ChevronsRight, Clock, Download, ExternalLink,
+    Filter, MessageCircle, RefreshCcw, Search, User, UserCheck,
 } from "lucide-react";
 import type React from "react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { searchConsultations } from "../../api/services/search";
-import type { ConsultationSearchHit } from "../../api/services/search";
+import type { ConsultationSearchHit, ConsultationSearchRequest, ConsultationSearchResponse } from "../../api/services/search";
 import * as styles from "./Style/Search.css.ts";
 
-/** 검색 결과 인터페이스*/
+/** UI 표시용 검색 결과 인터페이스 */
 interface SearchResult {
     id: string;
     date: string;
@@ -41,49 +28,61 @@ const ConsultationSearch: React.FC = () => {
     const navigate = useNavigate();
     const dateInputRef = useRef<HTMLInputElement>(null);
     
-    const [searchTerm, setSearchTerm] = useState("");
+    const [searchTerm, setSearchTerm] = useState<string>("");
     const [activeFilter, setActiveFilter] = useState<string>("ALL");
-    const [searchDate, setSearchDate] = useState("");
+    const [searchDate, setSearchDate] = useState<string>("");
     const [allResults, setAllResults] = useState<SearchResult[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [totalCount, setTotalCount] = useState(0);
+    const [isLoading, setIsLoading] = useState<boolean>(true);
+    const [totalCount, setTotalCount] = useState<number>(0);
 
     // 페이지네이션 관련 상태
-    const [currentPage, setCurrentPage] = useState(1);
+    const [currentPage, setCurrentPage] = useState<number>(1);
     const itemsPerPage = 10;
     const pagesPerBlock = 5;
 
-    const loadSearchData = useCallback(async (page = 1, filter = activeFilter) => {
+    /** 데이터 Fetch 함수 */
+    const fetchSearchData = useCallback(async (page: number, filter: string) => {
         try {
             setIsLoading(true);
-            const currentAgentId = Number(localStorage.getItem("userId") || 0);
+            const storedId = localStorage.getItem("userId");
+            const currentAgentId = storedId ? Number(storedId) : 0;
             const currentAgentName = localStorage.getItem("userName") || "상담원";
 
-            const req = {
-                keyword: searchTerm.trim() || undefined,
-                agent_id: filter === "MINE" ? currentAgentId : undefined,
-                date_from: searchDate ? `${searchDate}T00:00:00` : undefined,
-                date_to: searchDate ? `${searchDate}T23:59:59` : undefined,
-                final_result_code: filter === "REPEAT" ? "TRANSFERRED" : undefined,
-                page,
+            // 실제 값이 존재하는 파라미터만 할당
+            const req: ConsultationSearchRequest = {
+                page: page,
                 size: itemsPerPage,
             };
 
-            const response = await searchConsultations(req);
-            const hits: ConsultationSearchHit[] = response.hits ?? [];
+            if (searchTerm.trim()) req.keyword = searchTerm.trim();
+            if (filter === "MINE") req.agent_id = currentAgentId;
+            if (filter === "REPEAT") req.final_result_code = "TRANSFERRED";
+            if (searchDate) {
+                req.date_from = `${searchDate}T00:00:00`;
+                req.date_to = `${searchDate}T23:59:59`;
+            }
+
+            // API 호출 (FAQ.ts 처럼 response 자체를 데이터로 사용)
+            const response: ConsultationSearchResponse = await searchConsultations(req);
+            
+            // 데이터 추출 시 null 방어
+            const hits = response?.hits || [];
+            const total = response?.total || 0;
 
             const PRODUCT_LINE_LABEL: Record<string, string> = {
                 MOBILE: "모바일", INTERNET: "인터넷", IPTV: "IPTV",
                 TELEPHONE: "유선전화", ETC: "기타",
             };
 
-            const converted: SearchResult[] = hits.map((item) => {
-                const rawDate = item.ended_at || item.started_at || new Date().toISOString();
-                const d = new Date(rawDate);
-                const formattedDate = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+            const converted: SearchResult[] = hits.map((item: ConsultationSearchHit) => {
+                const rawDate = item.started_at || item.ended_at;
+                const formattedDate = rawDate 
+                    ? rawDate.split('T')[0].replace(/-/g, '.') 
+                    : "날짜 없음";
 
-                const isMine = item.agent_id === currentAgentId;
-                const resultCode = item.final_result_code ?? "";
+                const isMine = item.agent_id !== null && Number(item.agent_id) === currentAgentId;
+                const resultCode = item.final_result_code || "";
+                
                 const processStatus: SearchResult["process_status"] =
                     resultCode === "TRANSFERRED" ? "TRANSFERRED" :
                     resultCode === "DONE" ? "COMPLETED" : "PENDING";
@@ -91,9 +90,11 @@ const ConsultationSearch: React.FC = () => {
                 return {
                     id: String(item.consultation_id),
                     date: formattedDate,
+                    // customer_name이 null이므로 customer_id로 대체 표시
                     customer: item.customer_name || (item.customer_id ? `고객 #${item.customer_id}` : "이름 없음"),
-                    category: PRODUCT_LINE_LABEL[item.product_line_code ?? ""] ?? "일반상담",
+                    category: PRODUCT_LINE_LABEL[item.product_line_code || ""] || "일반상담",
                     summary: item.summary_text || "상담 기록이 없습니다.",
+                    // agent_name이 null이므로 id나 기본값으로 표시
                     agent: isMine ? currentAgentName : (item.agent_name || (item.agent_id ? `상담원 #${item.agent_id}` : "미지정")),
                     is_mine: isMine,
                     is_repeat: resultCode === "TRANSFERRED",
@@ -102,31 +103,28 @@ const ConsultationSearch: React.FC = () => {
             });
 
             setAllResults(converted);
-            setTotalCount(response.total);
+            setTotalCount(total);
             setCurrentPage(page);
+
         } catch (error) {
-            console.error("상담 내역 로드 실패:", error);
+            console.error("데이터 로드 실패:", error);
             setAllResults([]);
             setTotalCount(0);
         } finally {
             setIsLoading(false);
         }
-    }, [searchTerm, searchDate, activeFilter]);
+    }, [searchTerm, searchDate, itemsPerPage]);
 
+    // 필터나 조회 기간 변경 시 자동 로드
     useEffect(() => {
-        loadSearchData(1);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+        fetchSearchData(1, activeFilter);
+    }, [activeFilter, searchDate, fetchSearchData]);
 
-    const currentItems = allResults;
-    const totalPages = Math.ceil(totalCount / itemsPerPage);
-
-    /**  현재 블록의 페이지 번호들 계산 (5개씩) */
+    const totalPages = Math.ceil(totalCount / itemsPerPage) || 1;
     const currentBlock = Math.ceil(currentPage / pagesPerBlock);
     const startPage = (currentBlock - 1) * pagesPerBlock + 1;
     const endPage = Math.min(startPage + pagesPerBlock - 1, totalPages);
-    const currentBlockPages: number[] = [];
-    for (let i = startPage; i <= endPage; i++) currentBlockPages.push(i);
+    const currentBlockPages = Array.from({ length: Math.max(0, endPage - startPage + 1) }, (_, i) => startPage + i);
 
     const handleCalendarClick = () => {
         if (dateInputRef.current) {
@@ -135,9 +133,12 @@ const ConsultationSearch: React.FC = () => {
     };
 
     const handlePageChange = (page: number) => {
-        const targetPage = Math.max(1, Math.min(page, totalPages));
-        loadSearchData(targetPage);
+        fetchSearchData(page, activeFilter);
         window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const handleFilterClick = (filterValue: string) => {
+        setActiveFilter(filterValue);
     };
 
     return (
@@ -160,7 +161,7 @@ const ConsultationSearch: React.FC = () => {
                     <button
                         key={btn.value}
                         type="button"
-                        onClick={() => { setActiveFilter(btn.value); setCurrentPage(1); loadSearchData(1, btn.value); }}
+                        onClick={() => handleFilterClick(btn.value)}
                         style={{
                             display: "flex", alignItems: "center", gap: "8px", padding: "12px 20px", borderRadius: "16px",
                             fontSize: "14px", fontWeight: 700, cursor: "pointer", transition: "all 0.2s",
@@ -187,7 +188,7 @@ const ConsultationSearch: React.FC = () => {
                                 className={styles.input}
                                 placeholder="검색어 입력..."
                                 value={searchTerm}
-                                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
                                 style={{ color: "#1A1A1A", fontWeight: 600 }}
                             />
                         </div>
@@ -203,7 +204,7 @@ const ConsultationSearch: React.FC = () => {
                                 type="date" 
                                 className={styles.input} 
                                 value={searchDate}
-                                onChange={(e) => { setSearchDate(e.target.value); setCurrentPage(1); }}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchDate(e.target.value)}
                                 style={{ color: "#1A1A1A", fontWeight: 800, fontFamily: "inherit", cursor: 'pointer' }} 
                             />
                         </div>
@@ -217,7 +218,7 @@ const ConsultationSearch: React.FC = () => {
                         >
                             <RefreshCcw size={16} /> 초기화
                         </button>
-                        <button type="button" className={styles.searchBtn} onClick={() => loadSearchData(1)}>검색하기</button>
+                        <button type="button" className={styles.searchBtn} onClick={() => fetchSearchData(1, activeFilter)}>검색하기</button>
                     </div>
                 </div>
             </section>
@@ -248,8 +249,8 @@ const ConsultationSearch: React.FC = () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {currentItems.length > 0 ? (
-                                        currentItems.map((res) => (
+                                    {allResults.length > 0 ? (
+                                        allResults.map((res: SearchResult) => (
                                             <tr key={res.id} className={styles.tableRow} onClick={() => navigate(`/history/${res.id}`)}>
                                                 <td style={{ color: "#888", fontSize: "13px" }}>#{res.id}</td>
                                                 <td><span style={{ fontWeight: 800, fontSize: "15px", color: "#1A1A1A" }}>{res.customer}</span></td>
@@ -290,33 +291,29 @@ const ConsultationSearch: React.FC = () => {
                                 </tbody>
                             </table>
 
-                            {/* 개선된 페이지네이션  */}
                             {totalPages > 1 && (
                                 <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "4px", marginTop: "32px", paddingBottom: "40px" }}>
-                                    
-                                    {/* 첫 블록이 아닐 때만 노출하거나 비활성화 처리 (5페이지 앞) */}
                                     <button 
+                                        type="button"
                                         disabled={currentPage <= pagesPerBlock}
                                         onClick={() => handlePageChange(currentPage - pagesPerBlock)}
                                         style={paginationArrowStyle(currentPage <= pagesPerBlock)}
                                     >
                                         <ChevronsLeft size={18} />
                                     </button>
-
-                                    {/* 이전 페이지 */}
                                     <button 
+                                        type="button"
                                         disabled={currentPage === 1}
                                         onClick={() => handlePageChange(currentPage - 1)}
                                         style={paginationArrowStyle(currentPage === 1)}
                                     >
                                         <ChevronLeft size={18} />
                                     </button>
-                                    
-                                    {/* 숫자 페이지 (5개씩) */}
                                     <div style={{ display: "flex", gap: "4px", margin: "0 8px" }}>
-                                        {currentBlockPages.map((num) => (
+                                        {currentBlockPages.map((num: number) => (
                                             <button
                                                 key={num}
+                                                type="button"
                                                 onClick={() => handlePageChange(num)}
                                                 style={{
                                                     width: "36px", height: "36px", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: 700,
@@ -329,18 +326,16 @@ const ConsultationSearch: React.FC = () => {
                                             </button>
                                         ))}
                                     </div>
-
-                                    {/* 다음 페이지 */}
                                     <button 
+                                        type="button"
                                         disabled={currentPage === totalPages}
                                         onClick={() => handlePageChange(currentPage + 1)}
                                         style={paginationArrowStyle(currentPage === totalPages)}
                                     >
                                         <ChevronRight size={18} />
                                     </button>
-
-                                    {/* 다음 블록 (5페이지 뒤) */}
                                     <button 
+                                        type="button"
                                         disabled={Math.ceil(currentPage / pagesPerBlock) === Math.ceil(totalPages / pagesPerBlock)}
                                         onClick={() => handlePageChange(currentPage + pagesPerBlock)}
                                         style={paginationArrowStyle(Math.ceil(currentPage / pagesPerBlock) === Math.ceil(totalPages / pagesPerBlock))}
@@ -357,7 +352,6 @@ const ConsultationSearch: React.FC = () => {
     );
 };
 
-/** 페이지네이션 화살표 공통 스타일 */
 const paginationArrowStyle = (isDisabled: boolean): React.CSSProperties => ({
     display: "flex",
     alignItems: "center",

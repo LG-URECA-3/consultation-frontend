@@ -227,6 +227,10 @@ const Dashboard: React.FC = () => {
                 
             };
 
+            // matchedCustomer를 정의할 때 summaryText를 가질 수 있도록 타입을 확장해서 선언합니다.
+
+            // 1. 타입을 확장해서 정의 (summary_text와 summaryText를 모두 허용하게 만듦)
+
             setAssignedCustomer(matchedCustomer as unknown as CustomerInfo);
 
             try {
@@ -483,41 +487,52 @@ const Dashboard: React.FC = () => {
                                 </div>
                             ) : (
                                 <div className={styles.activityList}>
-                                    {activities.slice(0, 5).map((item, idx) => {
-                                        const id = (item as ConsultationResponse).consultationId || (item as ConsultationResponse).consultation_id;
-                                        const name = (item as ConsultationResponse).customerName || (item as ConsultationResponse).customer_name || "고객";
-                                        const category = (item as ConsultationResponse).productLineCode || (item as ConsultationResponse).category || "-";
-                                        const raw = item as ConsultationResponse & { firstMessage?: string };
-                                        const preview = raw.summaryText || raw.firstMessage || raw.content_preview || raw.initialMessage || "";
-                                        const status = String((item as ConsultationResponse).statusCode || (item as ConsultationResponse).status || "").toUpperCase();
-                                        return (
-                                            <button
-                                                key={`act-${id ?? idx}`}
-                                                type="button"
-                                                className={styles.activityItem}
-                                                onClick={() => id && navigate(`/history/${id}`)}
-                                            >
-                                                <div style={{ width: '36px', height: '36px', borderRadius: '12px', background: '#FFF0F6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                                    <User size={16} color="#E6007E" />
-                                                </div>
-                                                <div style={{ flex: 1, minWidth: 0, marginLeft: '14px' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
-                                                        <span className={styles.customerName}>{name}</span>
-                                                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#E6007E', background: '#FFF0F6', padding: '2px 8px', borderRadius: '100px' }}>{category}</span>
-                                                    </div>
-                                                    <p style={{ fontSize: '13px', color: '#888', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                        {preview ? preview.slice(0, 40) + (preview.length > 40 ? '…' : '') : '내용 없음'}
-                                                    </p>
-                                                </div>
-                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0 }}>
-                                                    <span className={status === 'DONE' ? styles.statusBadge.DONE : status === 'IN_PROGRESS' ? styles.statusBadge.IN_PROGRESS : styles.statusBadge.CANCELED}>
-                                                        {status === 'DONE' ? '완료' : status === 'IN_PROGRESS' ? '진행중' : '취소'}
-                                                    </span>
-                                                </div>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
+    {activities.slice(0, 5).map((item, idx) => {
+        const res = item as ConsultationResponse;
+        const id = res.consultationId || res.consultation_id;
+        
+        const name = res.customerName || res.customer_name || "고객";
+        const category = res.productLineCode || res.category || "-";
+        const raw = item as ConsultationResponse & { firstMessage?: string; content_preview?: string };
+        const preview = raw.summaryText || raw.summary_text || raw.firstMessage || raw.content_preview || raw.initialMessage || "";
+        const status = String(res.statusCode || res.status || "").toUpperCase();
+
+        return (
+            <button
+                key={`act-${id ?? idx}`}
+                type="button"
+                className={styles.activityItem}
+                onClick={() => {
+                    if (id) {
+                        console.log("History 이동 ID:", id);
+                        navigate(`/history/${id}`);
+                    } else {
+                        console.warn("이동할 ID가 없습니다.", item);
+                    }
+                }}
+            >
+                <div style={{ width: '36px', height: '36px', borderRadius: '12px', background: '#FFF0F6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <User size={16} color="#E6007E" />
+                </div>
+                <div style={{ flex: 1, minWidth: 0, marginLeft: '14px', textAlign: 'left' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
+                        <span className={styles.customerName}>{name}</span>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#E6007E', background: '#FFF0F6', padding: '2px 8px', borderRadius: '100px' }}>{category}</span>
+                    </div>
+                    <p style={{ fontSize: '13px', color: '#888', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {preview ? (preview.length > 40 ? preview.slice(0, 40) + '…' : preview) : '내용 없음'}
+                    </p>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0 }}>
+                    {/* statusBadge 스타일이 DONE, IN_PROGRESS 등으로 분기되어 있는지 확인 필요 */}
+                    <span className={status === 'DONE' ? styles.statusBadge.DONE : status === 'IN_PROGRESS' ? styles.statusBadge.IN_PROGRESS : styles.statusBadge.CANCELED}>
+                        {status === 'DONE' ? '완료' : status === 'IN_PROGRESS' ? '진행중' : '취소'}
+                    </span>
+                </div>
+            </button>
+        );
+    })}
+</div>
                             )}
                         </section>
                     </div>

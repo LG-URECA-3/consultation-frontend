@@ -13,7 +13,6 @@ interface CustomerFormData {
   category: string;
 }
 
-
 interface LocationState {
     formData: CustomerFormData;
     consultationId: string;
@@ -41,7 +40,7 @@ const CustomerQA: React.FC = () => {
         category: "기타 문의" 
     };
     
-    //  상담 ID 보관 (이게 없으면 나중에 Chat에서 튕김)
+    // 상담 ID 보관
     const consultationId = state?.consultationId;
 
     const fetchAnalysis = useCallback(async () => {
@@ -55,7 +54,7 @@ const CustomerQA: React.FC = () => {
         try {
             const data = await getSimilarFaq(formData.message);
             setAiAnswer(data.answer);
-            setDynamicFaqList(data.retrieved_faqs);
+            setDynamicFaqList(data.faqList); 
         } catch (error) {
             console.error("분석 데이터를 가져오는 중 오류 발생:", error);
             setAiAnswer("시스템 오류로 인해 답변을 생성하지 못했습니다. 상담사에게 연결해 주세요.");
@@ -68,24 +67,26 @@ const CustomerQA: React.FC = () => {
         fetchAnalysis();
     }, [fetchAnalysis]);
 
-    const isAllSelected = !isLoading && (
-        dynamicFaqList.length === 0 ||
-        dynamicFaqList.every(faq => feedbacks[faq.faq_id] != null)
-    );
+  const isAllSelected = !isLoading && (
+    (dynamicFaqList?.length ?? 0) === 0 ||
+    (dynamicFaqList ?? []).every(faq => feedbacks[String(faq.kbId)] != null)
+);
 
-    const handleFeedback = (id: string, status: FeedbackStatus) => {
+    const handleFeedback = (id: string | number, status: FeedbackStatus) => {
+        const key = String(id);
         setFeedbacks(prev => ({
             ...prev,
-            [id]: prev[id] === status ? null : status
+            [key]: prev[key] === status ? null : status
         }));
     };
 
-    /**  다음 단계로 이동 시 FAQ 피드백을 Redis에 저장 후 이동합니다. */
+    /** 다음 단계로 이동 시 FAQ 피드백을 Redis에 저장 후 이동합니다. */
     const handleNextStep = async () => {
         if (!isAllSelected) return;
 
         const selectedFaqContent = dynamicFaqList
-            .filter((faq: FaqItem) => feedbacks[faq.faq_id] === "like")
+            
+            .filter((faq: FaqItem) => feedbacks[String(faq.kbId)] === "like")
             .map((faq: FaqItem) => {
                 const firstSentence = faq.answer.split('.')[0];
                 const summaryText = firstSentence.length > 100
@@ -94,16 +95,17 @@ const CustomerQA: React.FC = () => {
 
                 return {
                     ...faq,
-                    question: summaryText
+                    request: summaryText 
                 };
             });
 
         // FAQ 피드백을 Redis에 미리 저장
         if (dynamicFaqList.length > 0) {
             const faqPayload: FaqFeedbackItem[] = dynamicFaqList.map(faq => ({
-                question: faq.question,
+                question: faq.request, 
                 answer: faq.answer,
-                liked: feedbacks[faq.faq_id] === "like" ? true : feedbacks[faq.faq_id] === "dislike" ? false : null,
+             
+                liked: feedbacks[String(faq.kbId)] === "like" ? true : feedbacks[String(faq.kbId)] === "dislike" ? false : null,
             }));
             const aiAnswerLiked = feedbacks["AI"] === "like" ? true : feedbacks["AI"] === "dislike" ? false : null;
             await storeFaqSession(sessionId, faqPayload, aiAnswer, aiAnswerLiked).catch(err =>
@@ -199,24 +201,26 @@ const CustomerQA: React.FC = () => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '20px 0 16px' }}>
                         <div style={{ flex: 1, height: '1px', backgroundColor: '#F1F5F9' }} />
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', backgroundColor: '#FFF0F6', color: '#E6007E', padding: '5px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: 800, whiteSpace: 'nowrap' }}>
-                            <Search size={12} /> 관련 FAQ {dynamicFaqList.length}건
+                            <Search size={12} /> 관련 FAQ {(dynamicFaqList || []).length}건
                         </div>
                         <div style={{ flex: 1, height: '1px', backgroundColor: '#F1F5F9' }} />
                     </div>
 
                     {/* FAQ 목록 */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '24px' }}>
-                        {dynamicFaqList.map((faq) => {
-                            const currentStatus = feedbacks[faq.faq_id];
+                        {(dynamicFaqList ?? []).map((faq) => {
+                        
+                            const faqKey = String(faq.kbId);
+                            const currentStatus = feedbacks[faqKey];
                             return (
-                                <div key={faq.faq_id} className={styles.qaItem}>
+                                <div key={faqKey} className={styles.qaItem}>
                                     <div className={styles.qaTextContainer}>
-                                        <div className={styles.qaTitle}>{faq.question}</div>
+                                        <div className={styles.qaTitle}>{faq.request}</div> 
                                         <div className={styles.qaText}>{faq.answer}</div>
                                     </div>
                                     <div className={styles.feedbackButtonGroup}>
                                         <button
-                                            onClick={() => handleFeedback(faq.faq_id, "like")}
+                                            onClick={() => handleFeedback(faqKey, "like")}
                                             style={{
                                                 width: '32px', height: '32px', borderRadius: '8px', border: '1.5px solid',
                                                 borderColor: currentStatus === 'like' ? '#E6007E' : '#E2E8F0',
@@ -228,7 +232,7 @@ const CustomerQA: React.FC = () => {
                                             <Check size={16} color={currentStatus === 'like' ? '#fff' : '#CBD5E1'} strokeWidth={3} />
                                         </button>
                                         <button
-                                            onClick={() => handleFeedback(faq.faq_id, "dislike")}
+                                            onClick={() => handleFeedback(faqKey, "dislike")}
                                             style={{
                                                 width: '32px', height: '32px', borderRadius: '8px', border: '1.5px solid',
                                                 borderColor: currentStatus === 'dislike' ? '#374151' : '#E2E8F0',

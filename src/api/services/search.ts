@@ -1,5 +1,6 @@
-import axios from 'axios';
+import { fastApiStore } from "../client"; 
 
+// --- Interfaces ---
 export interface ConsultationSearchHit {
     consultation_id: number;
     summary_text: string;
@@ -30,12 +31,7 @@ export interface ConsultationSearchRequest {
     size?: number;
 }
 
-export interface ConsultationMessageDetail {
-    message_seq: number;
-    sender_type: string;
-    content: string;
-}
-
+/** 상담 상세 정보 인터페이스 (빌드 에러 방지를 위해 추가) */
 export interface ConsultationDetailResponse {
     consultation_id: number;
     started_at: string | null;
@@ -50,45 +46,33 @@ export interface ConsultationDetailResponse {
     summary_text: string | null;
     customer_request: string | null;
     agent_action: string | null;
-    messages: ConsultationMessageDetail[];
+    messages: {
+        message_seq: number;
+        sender_type: string;
+        content: string;
+    }[];
 }
 
-export const getConsultationDetail = async (consultationId: string | number): Promise<ConsultationDetailResponse | null> => {
-    try {
-        const response = await axios.get(`/fastapi/v1/consultations/${consultationId}`);
-        return response.data;
-    } catch (error) {
-        console.error("상담 상세 조회 실패:", error);
-        return null;
-    }
-};
-
+/** ES 상담 검색 API */
 export const searchConsultations = async (req: ConsultationSearchRequest): Promise<ConsultationSearchResponse> => {
     try {
-        const response = await axios.post('/fastapi/v1/search/consultations', req, {
-            headers: { 'Content-Type': 'application/json' }
+        const response = await fastApiStore.post('/v1/search/consultations', {}, {
+            params: req
         });
-        return response.data;
-    } catch (error) {
-        console.error("ES 상담 검색 실패:", error);
+        return response as unknown as ConsultationSearchResponse;
+    } catch (err) {
+        console.error("검색 API 에러:", err);
         return { hits: [], total: 0, page: req.page ?? 1, size: req.size ?? 10 };
     }
 };
 
-// 하위 호환용 - 기존 코드에서 사용하던 타입들 유지
-export interface ApiConsultationItem {
-    consultationId: number;
-    customerName: string;
-    consultationCategory: string;
-    summaryText: string | null;
-    agentId: number | null;
-    statusCode: "WAITING" | "DONE" | "IN_PROGRESS";
-    startedAt: string | null;
-    endedAt: string | null;
-}
-
-export interface SearchApiResponse {
-    success: boolean;
-    data: ApiConsultationItem[];
-    error: unknown;
-}
+/** 상담 상세 조회 API */
+export const getConsultationDetail = async (consultationId: string | number): Promise<ConsultationDetailResponse | null> => {
+    try {
+        const response = await fastApiStore.get(`/v1/consultations/${consultationId}`);
+        return response as unknown as ConsultationDetailResponse;
+    } catch (err) {
+        console.error("상세 조회 API 연결 실패:", err);
+        return null;
+    }
+};
